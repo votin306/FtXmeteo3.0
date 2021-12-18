@@ -21,14 +21,14 @@ byte bukva_Mz[8]  = {B10000, B10000, B10000, B11110, B10001, B10001, B11110, B00
 byte bukva_IYI[8] = {B10001, B10001, B10001, B11001, B10101, B10101, B11001, B00000,}; // Буква "Ы"
 byte bukva_Yu[8]  = {B10010, B10101, B10101, B11101, B10101, B10101, B10010, B00000,}; // Буква "Ю"
 byte bukva_Ya[8]  = {B01111, B10001, B10001, B01111, B00101, B01001, B10001, B00000,}; // Буква "Я"
-byte blue[8]  = {B00000,B10100,B01110,B00101,B00100,B00101,B01110,B10100,};
-byte budilnik[8]  = {B00000,B10001,B01010,B01110,B10101,B10111,B10001,B01110,};
+byte blue[8]  = {B00000, B10100, B01110, B00101, B00100, B00101, B01110, B10100,};
+byte budilnik[8]  = {B00000, B10001, B01010, B01110, B10101, B10111, B10001, B01110,};
 
-void page_one_char() {
-  lcd.createChar(1, smile);
-  lcd.createChar(2, nou);
-  lcd.createChar(3, sun);
-  lcd.createChar(4, rain);
-  lcd.createChar(5, blue);
-  lcd.createChar(6, budilnik);
+void sumbols(){
+  lcd.createChar(1, blue);
+  lcd.createChar(2, budilnik);
+  lcd.createChar(3, smile);
+  lcd.createChar(4, nou);
+  lcd.createChar(5, sun);
+  lcd.createChar(6, rain);
 }

@@ -6,17 +6,18 @@
 //------Если хотие настроить то вам сюди (вниз)-------
 
 //*****************НАСТРОЙКИ*****************
-#define DHTTYPE DHT22
-#define DHTPIN 2
+#define DHTTYPE DHT22    // Тип модуля, есть DHT11 а есть DHT22
+#define DHTPIN 2         // Куда подключен модуль DHT
+#define BTNPIN 3         // Куда подключена кнопка
+#define BLUEON 1         // Блютуз передача
+#define PRESS_TYPE 1     // Вид давления. 1 - Mmhg(миллиметры ртутного столба). 0 - Паскали
 
-float porog_temp = 26.5;
-int upd_disp =  1500;
-int change_page =  2000;
-boolean type_press = 0;
+float porog_temp = 21.5; // При какой температуре измнит смайлик
+int upd_disp =  1500;    // Обновление данных на экране
+int change_page =  2000; // Задержка между страницами
+boolean type_press = 0;  // Тип давления, 0 mmhg или 1 в паскалях
+int serial_send_pakage = 100000; // Задежка отпаравка данных на телефон
 
-int alarm[3]; // массив численных значений после парсинга
-
-#include "GParsingStream.h"
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
 #include <DHT.h>
@@ -25,80 +26,119 @@ int alarm[3]; // массив численных значений после п�
 #include "SoftwareSerial.h"
 #include <DFPlayer_Mini_Mp3.h>
 
-DHT dht(DHTPIN, DHTTYPE);
-Adafruit_BMP085 bmp;
-DS3231  rtc(SDA, SCL);
-LiquidCrystal_I2C lcd(0x27, 20, 4);
-Time  t;
-SoftwareSerial player(10, 11);
-SoftwareSerial mySerial(10, 11);
+DHT dht(DHTPIN, DHTTYPE);                    //Температурный датчик
+Adafruit_BMP085 bmp;                         //Барометр
+DS3231  rtc(SDA, SCL);                       //Датчик реального времени
+LiquidCrystal_I2C lcd(0x27, 20, 4);          //Дисплей. 1 значение: адрес, 2 значение: ширина, 3 значение: высота
+Time  t;                                     //СОЗДАНИЕ КЛАССА хранящее время отдельно
+SoftwareSerial player(10, 11);               //Плеер
+SoftwareSerial hc_06(8, 9);                  //БлютуХ. rx 9. tx 8
 
-unsigned long timer_bmp;
+//**************ТАЙМЕРЫ**************
+unsigned long timer_bmp_paskal;
 unsigned long timer_button;
 unsigned long time_serial;
 unsigned long time_graph;
 unsigned long alarm_timer;
 unsigned long serial_timer_tx;
-unsigned long serial_timer_rx;
+unsigned long test_timer;
 
-long mmhg;
-byte page;
-String val_serial = "";
-boolean recievedFlag;
-boolean chan = 1; // переменная для 2 страницы(Время) чтобы выполнить сброс предыдущей страницы
-boolean chan2 = 1; // переменная для 3 страницы(DHT22) чтобы выполнить сброс предыдущей страницы
-boolean chan3 = 1; // переменная для 4 страницы чтобы выполнить сброс предыдущей страницы
-boolean chan4 = 1; // переменная для 1 страницы(барометр)чтобы выполнить сброс предыдущей страницы
-boolean chan5 = 1; 
-boolean alarm_state;
-int timeout;
+//**************ПЕРЕМЕННЫЕ КАКИЕ-ТО**************
+long mmhg; //Давление
+byte page; //СМЕНА СТРАНИЦ
+String val_serial = ""; //Данные с порта
+boolean recievedFlag; //Принятие данных в порт? приняли
+boolean bmp_page_upd = 1;  // переменная для 2 страницы(Время) чтобы выполнить сброс предыдущей страницы
+boolean time_page_upd = 1; // переменная для 3 страницы(DHT22) чтобы выполнить сброс предыдущей страницы
+boolean dth_page_upd = 1; // переменная для 4 страницы чтобы выполнить сброс предыдущей страницы
+boolean alarm_page_upd = 1; // переменная для 1 страницы(барометр)чтобы выполнить сброс предыдущей страницы
+boolean alarm_state;       //Состояние будильника
+boolean test_on = 0;       //Тест идет или нет
 
-byte x_alarm;
-byte y_alarm;
+void(* resetFunc) (void) = 0;
 
 void setup() {
   Serial.begin (9600);
-  lcd.begin();                      // initialize the lcd
+  lcd.begin();
   lcd.backlight();
-  if (!bmp.begin()) {
-    Serial.println("Барометр не найден");
-    while (1) {}
-  }
+
+  bmp.begin();
   rtc.begin();
   dht.begin();
   player.begin (9600);
-  mp3_set_serial (player);  //set softwareSerial for DFPlayer-mini mp3 module 
+  hc_06.begin(9600);
+
+  //rtc.setDOW(FRIDAY);
+  //rtc.setTime(22, 22, 0);
+  //rtc.setDate(11, 12, 2021);
+
+  mp3_set_serial (player);  //set softwareSerial for DFPlayer-mini mp3 module
   mp3_set_volume (15);
-  
+
+  if (digitalRead(BTNPIN)) {
+    lcd.setCursor(0, 0); lcd.print("TECT Meteo");
+    lcd.setCursor(12, 0); lcd.print("."); delay(500); lcd.setCursor(13, 0); lcd.print("."); delay(500); lcd.setCursor(14, 0); lcd.print("."); delay(500);
+    if (isnan(dht.readHumidity())) {
+      lcd.setCursor(0, 1);
+      lcd.print("DHT22 not found :( ");
+      resetFunc();
+    } else {
+      lcd.setCursor(0, 1);
+      lcd.print("DHT22 found :)");
+    }
+    if (!bmp.begin()) {
+      lcd.setCursor(0, 2);
+      lcd.print("BMPxxx not found :(");
+      resetFunc();
+    } else {
+      lcd.setCursor(0, 2);
+      lcd.print("BMPxxx found :)");
+    }
+    if (isnan(rtc.getTemp())) {
+      lcd.setCursor(0, 3);
+      lcd.print("RTC not found :(");
+      resetFunc();
+    } else {
+      lcd.setCursor(0, 3);
+      lcd.print("RTC found :)");
+    }
+    delay(5000);
+    test_on == 0;
+    page = 1;
+  }
 }
 
 void change() {
-  if (millis() - timer_button >= 1000) {
-    timer_button = millis();
-    if (digitalRead(3)) {
-      page++;
+  if (test_on == 0) {
+    if (millis() - timer_button >= change_page) {
+      if (digitalRead(BTNPIN)) {
+        page++;
+      } timer_button = millis();
+    }
+    switch (page) {
+      case 0: bmp_page();
+        break;
+      case 1: dht_page();
+        break;
+      case 2: page = 0; dth_page_upd = 1; bmp_page_upd = 1;
+        break;
     }
   }
-  switch (page) {
-    case 0: page_one_char(); temp_press_diplay();
-      break;
-    case 1: times();
-      break;
-    case 2: DHTs();
-      break;
-    case 3: disp_alarm();
-      break;
-    case 4: page = 0; chan = 1; chan2 = 1; chan4 = 1; chan3 = 1;chan5 = 1;
-      break;
-
-  }
 }
-
 
 void loop() {
-  convert_mmhginpascal();
-  page_one_char();
   change();
-  serial_data();
-  check_alarm();
 }
+/*
+        ┏---------┓      |        /|     ┏---------┓     |-----------      |         |
+        |         |      |       / |     |         |     |                 |         |
+        |         |      |      /  |     |         |     |                 |         |
+        |         |      |     /   |     |         |     |                 |         |
+        |         |      |    /    |     |         |     |------           |         |
+        |         |      |   /     |     |         |     |                 |         |
+        |         |      |  /      |     |         |     |                 |---------|--┓
+        |         |      | /       |     |         |     |                              |
+        |         |      |/        |     |         |     |-----------                   |
+
+                                                                                   BY Fun community
+*/
